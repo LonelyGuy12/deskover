@@ -109,14 +109,33 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
         stbi_image_free(imgData);
     }
 
+    // Register Global Hotkey for INSERT (id 1)
+    ::RegisterHotKey(hwnd, 1, 0, VK_INSERT);
+
     // Main loop
     bool done = false;
+    bool g_OverlayLocked = true;
+
     while (!done)
     {
         // Poll and handle messages
         MSG msg;
         while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE))
         {
+            if (msg.message == WM_HOTKEY && msg.wParam == 1)
+            {
+                g_OverlayLocked = !g_OverlayLocked;
+                DWORD exStyle = ::GetWindowLongW(hwnd, GWL_EXSTYLE);
+                if (g_OverlayLocked)
+                    ::SetWindowLongW(hwnd, GWL_EXSTYLE, exStyle | WS_EX_TRANSPARENT);
+                else
+                    ::SetWindowLongW(hwnd, GWL_EXSTYLE, exStyle & ~WS_EX_TRANSPARENT);
+                
+                // Force window to update its style
+                ::SetWindowPos(hwnd, g_OverlayLocked ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, 
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+            }
+
             ::TranslateMessage(&msg);
             ::DispatchMessage(&msg);
             if (msg.message == WM_QUIT)
@@ -131,17 +150,68 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
         ImGui::NewFrame();
 
         // ---------------------------------------------------------
-        // RENDER OVERLAY HERE
+        // OVERLAY LOGIC
         // ---------------------------------------------------------
 
-        // Render the loaded image in the bottom-right corner, for example:
+        // If unlocked, draw a fullscreen dim background so the user knows desktop clicks are blocked
+        if (!g_OverlayLocked)
+        {
+            ImGui::SetNextWindowPos(ImVec2(0, 0));
+            ImGui::SetNextWindowSize(io.DisplaySize);
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.4f));
+            ImGui::Begin("DimBg", nullptr, 
+                ImGuiWindowFlags_NoDecoration | 
+                ImGuiWindowFlags_NoInputs | 
+                ImGuiWindowFlags_NoSavedSettings | 
+                ImGuiWindowFlags_NoFocusOnAppearing | 
+                ImGuiWindowFlags_NoBringToFrontOnFocus);
+            ImGui::End();
+            ImGui::PopStyleColor();
+            
+            // Show global instructions
+            ImGui::SetNextWindowPos(ImVec2(screenW / 2.0f, 50.0f), ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+            ImGui::SetNextWindowBgAlpha(0.8f);
+            if (ImGui::Begin("EditModeText", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs))
+            {
+                ImGui::TextColored(ImVec4(0, 1, 0, 1), "EDIT MODE ACTIVE");
+                ImGui::Text("Drag your image to move it. Right-click the image to Exit.");
+                ImGui::Text("Press [INSERT] to lock the overlay and return to your desktop.");
+            }
+            ImGui::End();
+        }
+
+        // Draw the image window
         if (userImageSrv)
         {
-            // Calculate a nice position (e.g., bottom right with 20px padding)
-            ImVec2 pos(screenW - imgW - 20.0f, screenH - imgH - 20.0f);
-            ImVec2 size(static_cast<float>(imgW), static_cast<float>(imgH));
+            ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize;
             
-            TextureLoader::DrawTexture(pos, size, userImageSrv);
+            if (g_OverlayLocked)
+            {
+                window_flags |= ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoMove;
+                ImGui::SetNextWindowBgAlpha(0.0f); // completely invisible background
+            }
+            else
+            {
+                // Slight background when editing to see bounds
+                ImGui::SetNextWindowBgAlpha(0.2f);
+            }
+
+            // Default position in bottom right if no ini file is loaded
+            ImGui::SetNextWindowPos(ImVec2(screenW - imgW - 20.0f, screenH - imgH - 20.0f), ImGuiCond_FirstUseEver);
+
+            if (ImGui::Begin("OverlayImageWindow", nullptr, window_flags))
+            {
+                ImGui::Image((void*)userImageSrv, ImVec2((float)imgW, (float)imgH));
+
+                // Right-click context menu (only accessible when not locked)
+                if (!g_OverlayLocked && ImGui::BeginPopupContextWindow())
+                {
+                    if (ImGui::MenuItem("Quit Overlay"))
+                        done = true;
+                    ImGui::EndPopup();
+                }
+            }
+            ImGui::End();
         }
 
         // ---------------------------------------------------------
@@ -160,6 +230,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     }
 
     // Cleanup
+    ::UnregisterHotKey(hwnd, 1);
+
     if (userImageSrv) { userImageSrv->Release(); }
 
     ImGui_ImplDX11_Shutdown();
