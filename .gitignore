@@ -1,0 +1,9 @@
+/build/
+/.vs/
+*.user
+*.suo
+*.ncb
+*.sdf
+*.opensdf
+*.db
+/out/
