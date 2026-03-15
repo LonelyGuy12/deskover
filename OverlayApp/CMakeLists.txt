@@ -23,6 +23,11 @@ set(MEDIA_SOURCES
 )
 
 # ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+find_package(nlohmann_json CONFIG REQUIRED)
+
+# ---------------------------------------------------------------------------
 # Define Executable
 # ---------------------------------------------------------------------------
 add_executable(WinUpOverlay WIN32
@@ -40,12 +45,13 @@ target_include_directories(WinUpOverlay PRIVATE
     "${IMGUI_DIR}"
 )
 
-# Link against DirectX 11 libraries
+# Link against DirectX 11 libraries and JSON
 target_link_libraries(WinUpOverlay PRIVATE
     d3d11
     dxgi
     d3dcompiler
     dwmapi
+    nlohmann_json::nlohmann_json
 )
 
 # Enforce C++17

@@ -2,5 +2,7 @@
   "name": "winupoverlay",
   "version": "1.0.0",
   "description": "Standalone Desktop Overlay",
-  "dependencies": []
+  "dependencies": [
+    "nlohmann-json"
+  ]
 }

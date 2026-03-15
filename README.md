@@ -1,6 +1,21 @@
-# DX11 Hook Framework
+# WinUp Overlay: Global Desktop Media Manager
 
-A 64-bit C++ framework for **DLL injection** and **DirectX 11 API hooking** with a transparent Dear ImGui overlay and GIF/texture rendering support.
+A premium C++ application for creating a global, click-through desktop overlay. Manage and display images and animated GIFs seamlessly on your desktop with a professional dashboard.
+
+---
+
+## Key Features
+
+- **Global Overlay**: Displays media on top of all windows, including games and applications.
+- **Smart Click-Through**: Toggle between "Interactive Dashboard" and "Seamless Click-Through" modes instantly.
+- **Premium Dashboard**: A dedicated UI (**Press `INSERT`**) to manage your desktop overlays:
+  - **Sidebar Navigation**: Quickly switch between added media with thumbnail previews.
+  - **Per-Item Opacity**: Adjust transparency for each overlay individualy (0-100%).
+  - **Real-Time Scaling**: Resize your images and GIFs from 0.1x to 5.0x size.
+  - **Visibility Toggles**: Hide/Show media without deleting it.
+- **GIF Support**: High-performance animated GIF playback with transparency.
+- **Persistent Configuration**: All positions, scales, and opacity settings are saved automatically to `overlay_config.json`.
+- **System Tray Integration**: Manage the application directly from your taskbar.
 
 ---
 
@@ -8,107 +23,73 @@ A 64-bit C++ framework for **DLL injection** and **DirectX 11 API hooking** with
 
 ```
 winup/
-├── CMakeLists.txt          # Root build file
-├── vcpkg.json              # Dependency manifest (MinHook via vcpkg)
-├── Injector/
-│   ├── CMakeLists.txt
-│   └── Injector.cpp        # LoadLibrary injector (OpenProcess / VirtualAllocEx / CreateRemoteThread)
-└── DLL/
-    ├── CMakeLists.txt
-    ├── dllmain.cpp          # DLL entry point + init thread
-    ├── hooks/
-    │   ├── hook_manager.h/cpp  # MinHook init/uninit wrappers
-    │   └── dx11_hook.h/cpp    # IDXGISwapChain::Present detour (vtable method)
-    ├── overlay/
-    │   └── overlay.h/cpp      # Dear ImGui init, render, click-through window patch
-    └── media/
-        ├── texture_loader.h/cpp # Load D3D11 texture from raw RGBA byte array
-        └── gif_player.h/cpp     # Frame-sequenced GIF playback using texture_loader
-```
-
----
-
-## Dependencies
-
-### 1. MinHook (via vcpkg)
-```powershell
-# Install vcpkg if you haven't already
-git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
-C:\vcpkg\bootstrap-vcpkg.bat
-
-# Install minhook for x64
-C:\vcpkg\vcpkg install minhook:x64-windows-static
-```
-
-### 2. Dear ImGui (manual vendor)
-Download from https://github.com/ocornut/imgui and place the following files into `DLL/vendor/imgui/`:
-```
-imgui.h / imgui.cpp
-imgui_draw.cpp
-imgui_tables.cpp
-imgui_widgets.cpp
-imgui_internal.h
-imconfig.h
-imgui_impl_dx11.h / imgui_impl_dx11.cpp
-imgui_impl_win32.h / imgui_impl_win32.cpp
+├── CMakeLists.txt          # Build configuration
+├── vcpkg.json              # Dependencies (nlohmann-json, etc.)
+└── OverlayApp/
+    ├── main.cpp            # Application entry, Window Management, Dashboard UI
+    ├── media/
+    │   ├── texture_loader.h/cpp # High-performance image loading (D3D11)
+    │   └── gif_player.h/cpp     # Frame-sequenced GIF animation
+    └── vendor/
+        ├── imgui/          # Dear ImGui UI framework
+        ├── stb_image.h     # Image decoding
+        └── ...
 ```
 
 ---
 
 ## Building
 
-```powershell
-cmake -S . -B build -A x64 `
-      -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
-      -DVCPKG_TARGET_TRIPLET=x64-windows-static
+### Prerequisites
+- **CMake** (3.15+)
+- **vcpkg** (for JSON support)
+- **C++20 Compiler** (Visual Studio 2022 recommended)
 
+### Build Steps
+```powershell
+# 1. Configure CMake
+cmake -S . -B build -A x64 `
+      -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+# 2. Build Release version
 cmake --build build --config Release
 ```
 
-Outputs:
-- `build/Release/Injector.exe`
-- `build/Release/HookDLL.dll`
+The output will be located at `.\build\OverlayApp\Release\WinUpOverlay.exe`.
 
 ---
 
-## Usage
+## Usage Guide
 
-```powershell
-# 1. Launch your target DirectX 11 application and note its PID (Task Manager -> Details tab)
-# 2. Run the injector
-.\build\Release\Injector.exe <PID> "C:\full\path\to\HookDLL.dll"
-```
-
-The ImGui overlay will appear over the target window. It is **transparent and click-through** by default.
-
----
-
-## GIF Rendering
-
-Decode your GIF externally (e.g., with stb_image or a GIF decoder lib) to produce per-frame RGBA pixel buffers, then:
-
-```cpp
-GifPlayer gif;
-gif.AddFrame(framePixels0, width, height, 33 /*ms*/);
-gif.AddFrame(framePixels1, width, height, 33);
-// ... in your render loop:
-gif.Tick(deltaMs);
-TextureLoader::DrawTexture({100.f, 100.f}, {width, height}, gif.GetCurrentSRV());
-```
+1. **Launch**: Run `WinUpOverlay.exe`.
+2. **Dashboard Mode**: Press **`INSERT`** to unlock your mouse and open the Media Dashboard.
+   - Use the **Menu Bar** at the top to add new images (`.png`, `.jpg`, `.gif`).
+   - Select an item from the **Sidebar thumbnails** to edit its properties.
+   - **Scale** and **Opacity** sliders apply changes in real-time.
+3. **Overlay Mode**: Press **`INSERT`** again. The dashboard closes, and your images become click-through part of your desktop.
+4. **Exit**: Right-click the system tray icon and select **Quit**, or use the "Quit Overlay" option in the Dashboard context menu (Right-click on any image in Edit Mode).
 
 ---
 
-## Technical Notes
+## Technical Details
 
-| Topic | Detail |
+| Component | Technology |
 |---|---|
-| Hook method | Vtable pointer harvest via a scratch D3D11 device; `MH_CreateHook` at `Present` index 8 |
-| Overlay window | `WS_EX_TRANSPARENT \| WS_EX_LAYERED` applied to the target HWND — ImGui receives no mouse input |
-| Texture format | `DXGI_FORMAT_R8G8B8A8_UNORM`, immutable usage — one SRV per frame |
-| Thread safety | Init done once from `DLL_PROCESS_ATTACH` thread; hook context assumed single-threaded render |
+| Rendering | DirectX 11 |
+| UI Framework | Dear ImGui |
+| Configuration | JSON (nlohmann) |
+| Image Decoding | stb_image |
+
+---
+
+## License & Credits
+
+- **Dear ImGui** by Omar Cornut
+- **nlohmann-json** for configuration management
+- **stb_image** for media decoding
 
 ---
 
 ## Disclaimer
 
-> This tool is intended for **research, game modding, and development tooling** on applications you own or have permission to modify. Do not use it to circumvent anti-cheat systems or violate software terms of service.
+This tool is intended for personal desktop customization and development. Ensure you have the rights to use the media you display as overlays.
