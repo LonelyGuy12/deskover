@@ -3,6 +3,7 @@
 #include <tchar.h>
 #include <vector>
 #include <dwmapi.h>
+#include <shellapi.h>
 
 #include "vendor/imgui/imgui.h"
 #include "vendor/imgui/imgui_impl_win32.h"
@@ -23,18 +24,27 @@ static ID3D11DeviceContext*    g_pd3dDeviceContext = nullptr;
 static IDXGISwapChain*         g_pSwapChain = nullptr;
 static ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
+// Tray Icon messages
+#define WM_TRAYICON (WM_USER + 1)
+#define TRAY_QUIT_ID 1001
+
+// Global Tray Icon Data
+static NOTIFYICONDATAW g_nid = {};
+
 // Helper prototypes
 bool CreateDeviceD3D(HWND hWnd);
 void CleanupDeviceD3D();
 void CreateRenderTarget();
 void CleanupRenderTarget();
+void SetupTrayIcon(HWND hWnd);
+void RemoveTrayIcon();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 // The Standalone Overlay Application
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow)
 {
-    // Define window style: Popup (no borders), Transparent (alpha blending), Layered (required for transparency), Topmost
-    DWORD dwExStyle = WS_EX_APPWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT;
+    // Define window style: Popup (no borders), Transparent (alpha blending), Layered (required for transparency), Topmost, ToolWindow (hides from taskbar)
+    DWORD dwExStyle = WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW;
     DWORD dwStyle = WS_POPUP;
 
     WNDCLASSEXW wc = {
@@ -72,6 +82,9 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     ::SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
     ::ShowWindow(hwnd, SW_SHOW);
     ::UpdateWindow(hwnd);
+
+    // Setup System Tray Icon
+    SetupTrayIcon(hwnd);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -153,6 +166,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
 
+    RemoveTrayIcon();
     CleanupDeviceD3D();
     ::DestroyWindow(hwnd);
     ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
@@ -224,6 +238,25 @@ void CleanupRenderTarget()
     if (g_mainRenderTargetView) { g_mainRenderTargetView->Release(); g_mainRenderTargetView = nullptr; }
 }
 
+void SetupTrayIcon(HWND hWnd)
+{
+    ZeroMemory(&g_nid, sizeof(NOTIFYICONDATAW));
+    g_nid.cbSize = sizeof(NOTIFYICONDATAW);
+    g_nid.hWnd = hWnd;
+    g_nid.uID = 1;
+    g_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    g_nid.uCallbackMessage = WM_TRAYICON;
+    g_nid.hIcon = ::LoadIcon(nullptr, IDI_APPLICATION);
+    wcscpy_s(g_nid.szTip, L"WinUp Global Overlay");
+
+    ::Shell_NotifyIconW(NIM_ADD, &g_nid);
+}
+
+void RemoveTrayIcon()
+{
+    ::Shell_NotifyIconW(NIM_DELETE, &g_nid);
+}
+
 // Win32 message handler
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -232,6 +265,28 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     switch (msg)
     {
+        case WM_TRAYICON:
+            if (lParam == WM_RBUTTONUP)
+            {
+                POINT pt;
+                ::GetCursorPos(&pt);
+                HMENU hMenu = ::CreatePopupMenu();
+                ::InsertMenuW(hMenu, 0, MF_BYPOSITION | MF_STRING, TRAY_QUIT_ID, L"Quit Overlay");
+                
+                // SetForegroundWindow ensures the menu closes if clicked outside
+                ::SetForegroundWindow(hWnd);
+                ::TrackPopupMenu(hMenu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0, hWnd, nullptr);
+                ::DestroyMenu(hMenu);
+            }
+            return 0;
+
+        case WM_COMMAND:
+            if (LOWORD(wParam) == TRAY_QUIT_ID)
+            {
+                ::PostQuitMessage(0);
+            }
+            return 0;
+
         case WM_SIZE:
             if (g_pd3dDevice != nullptr && wParam != SIZE_MINIMIZED)
             {
